@@ -2,16 +2,15 @@ using Oceananigans
 using Oceananigans.Units
 using Statistics
 using Printf
-using GLMakie
 
-arch = CPU()
-Nx = Ny = Nz = 16
+arch = GPU()
+Nx = Ny = Nz = 256
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), x=(0, 2π), y=(0, 2π), z=(0, 2π))
 
 model = NonhydrostaticModel(; grid,
                             timestepper = :RungeKutta3,
                             advection = WENO(),
-                            coriolis = FPlane(f=1e-1))
+                            coriolis = FPlane(f=1.0))
 
 ϵ(x, y, z) = randn()
 set!(model, u=ϵ, v=ϵ, w=ϵ)
@@ -29,96 +28,83 @@ parent(w) .-= W
 ξ = ∂z(v) - ∂y(w)
 η = ∂x(w) - ∂z(u)
 ζ = ∂x(v) - ∂y(u)
+δ = ∂z(w)
 
-ω₀ = sqrt(mean(ξ^2 + η^2 + ζ^2))
+ξ² = Field(ξ^2)
+η² = Field(η^2)
+ζ² = Field(ζ^2)
+δ² = Field(δ^2)
+ω² = Field(ξ² + η² + ζ²)
+compute!(ω²)
+
+@show ω₀ = sqrt(mean(ω²))
 parent(u) ./= ω₀
 parent(v) ./= ω₀
 parent(w) ./= ω₀
 
-@show ω = sqrt(mean(ξ^2 + η^2 + ζ^2))
+compute!(ω²)
+@show sqrt(mean(ω²))
 
-ξ² = Field(Average(ξ^2))
-η² = Field(Average(η^2))
-ζ² = Field(Average(ζ^2))
-u² = Field(Average(u^2))
-v² = Field(Average(v^2))
-w² = Field(Average(w^2))
+X² = Field(Average(ξ²))
+Y² = Field(Average(η²))
+Z² = Field(Average(ζ²))
+D² = Field(Average(δ²))
+U² = Field(Average(u^2))
+V² = Field(Average(v^2))
+W² = Field(Average(w^2))
 
-e = Field(Average((u^2 + v^2 + w^2) / 2))
+u² = Field(u^2)
+v² = Field(v^2)
+w² = Field(w^2)
 
-simulation = Simulation(model, Δt=1e-2, stop_time=100)
+e = Field(Average((u² + v² + w²) / 2))
+
+simulation = Simulation(model, Δt=1e-1, stop_time=10000)
 
 wizard = TimeStepWizard(cfl=0.7, max_change=1.1)
-simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(3))
 
+start_time = Ref(time_ns())
 function progress(sim)
     msg = @sprintf("Iter: %d, time: %.2f", iteration(sim), time(sim))
     msg *= @sprintf(", Δt: %.4f", sim.Δt)
+
+    u, v, w = sim.model.velocities
+    msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e)", maximum(abs, u), maximum(abs, v), maximum(abs, w))
+
+    u, v, w = sim.model.velocities
+    msg *= @sprintf(", max|ω|: (%.2e, %.2e, %.2e)", maximum(abs, ξ), maximum(abs, η), maximum(abs, ζ))
+
+    elapsed = (time_ns() - start_time[]) / 1e9
+    msg *= @sprintf(", wall time: %s", prettytime(elapsed))
+    start_time[] = time_ns()
+
     @info msg
+
     return nothing
 end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-statistics_output = (; ξ², η², ζ², u², v², w², e)
-simulation.output_writers[:statistics] = JLD2OutputWriter(model, statistics_output;
+#=
+statistics_outputs = (; ξ²=X², η²=Y², ζ²=Z², δ²=D², u²=U², v²=V², w²=W², e)
+simulation.output_writers[:statistics] = JLD2OutputWriter(model, statistics_outputs;
                                                           schedule = TimeInterval(0.1),
                                                           filename = "rotating_decay_statistics",
                                                           overwrite_existing = true)
+=#
 
-simulation.output_writers[:slice] = JLD2OutputWriter(model, model.velocities;
-                                                     schedule = TimeInterval(0.1),
-                                                     indices = (:, :, Nz),
+field_outputs = (; u, v, w, ζ, δ)
+simulation.output_writers[:slice] = JLD2OutputWriter(model, field_outputs;
+                                                     schedule = TimeInterval(10),
+                                                     indices = (:, :, Int(Nz/2)),
                                                      filename = "rotating_decay_slice",
                                                      overwrite_existing = true)
 
-field_output = (; u, v, w, ζ)
-simulation.output_writers[:fields] = JLD2OutputWriter(model, model.velocities;
-                                                      schedule = TimeInterval(1),
+simulation.output_writers[:fields] = JLD2OutputWriter(model, field_outputs;
+                                                      schedule = TimeInterval(100),
                                                       filename = "rotating_decay_fields",
                                                       overwrite_existing = true)
 
 run!(simulation)
 
-fig = Figure()
-ut = FieldTimeSeries("rotating_decay_fields.jld2", "u")
-t = ut.times
-Nt = length(t)
-
-axu = Axis(fig[1, 1])
-slider = Slider(fig[2, 1], range=1:Nt, startvalue=1)
-n = slider.value
-
-un = @lift interior(ut[$n], :, :, 1)
-
-heatmap!(axu, un)
-
-display(fig)
-
-fig = Figure()
-axω = Axis(fig[1, 1], yscale=log10)
-axe = Axis(fig[2, 1], yscale=log10)
-
-ξ²t = FieldTimeSeries("rotating_decay_statistics.jld2", "ξ²")
-η²t = FieldTimeSeries("rotating_decay_statistics.jld2", "η²")
-ζ²t = FieldTimeSeries("rotating_decay_statistics.jld2", "ζ²")
-
-u²t = FieldTimeSeries("rotating_decay_statistics.jld2", "u²")
-v²t = FieldTimeSeries("rotating_decay_statistics.jld2", "v²")
-w²t = FieldTimeSeries("rotating_decay_statistics.jld2", "w²")
-et = FieldTimeSeries("rotating_decay_statistics.jld2", "e")
-
-t = et.times
-
-lines!(axω, t, sqrt.(ξ²t[1, 1, 1, :]), linewidth=4, label="x")
-lines!(axω, t, sqrt.(η²t[1, 1, 1, :]), linewidth=4, label="y")
-lines!(axω, t, sqrt.(ζ²t[1, 1, 1, :]), linewidth=4, label="z")
-axislegend(axω)
-
-lines!(axe, t, u²t[1, 1, 1, :] .* 3/2, label="3u²/2", linewidth=4)
-lines!(axe, t, v²t[1, 1, 1, :] .* 3/2, label="3v²/2", linewidth=4)
-lines!(axe, t, w²t[1, 1, 1, :] .* 3/2, label="3w²/2", linewidth=4)
-lines!(axe, t, et[1, 1, 1, :], label="e", linewidth=4)
-axislegend(axe)
-
-display(fig)
