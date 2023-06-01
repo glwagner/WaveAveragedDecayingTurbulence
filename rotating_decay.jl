@@ -122,14 +122,15 @@ very_deep_stokes_drift = UniformStokesDrift(∂z_uˢ=very_deep_s)
 @inline deep_s(z, t) = 0.4 * exp(4z)
 deep_stokes_drift = UniformStokesDrift(∂z_uˢ=deep_s)
 
-kinds = ["isotropic",
+kinds = [#"isotropic",
          "rotating",
          "surface_waves",
-         "weak_surface_waves",
-         "deep_surface_waves",
-         "very_deep_surface_waves",
-         "strong_surface_waves",
-         "very_strong_surface_waves"]
+         #"weak_surface_waves",
+         #"deep_surface_waves",
+         #"very_deep_surface_waves",
+         #"strong_surface_waves",
+         #"very_strong_surface_waves",
+]
 
 for kind in kinds
 
@@ -227,16 +228,23 @@ for kind in kinds
                                                               filename = prefix * "_statistics",
                                                               overwrite_existing = true)
 
-    simulation.output_writers[:slice] = JLD2OutputWriter(model, slice_outputs; indices,
-                                                         schedule = TimeInterval(slices_time_interval),
-                                                         filename = prefix * "_slice",
-                                                         overwrite_existing = true)
+    simulation.output_writers[:xy] = JLD2OutputWriter(model, slice_outputs;
+                                                      indices = (:, :, Nz),
+                                                      schedule = TimeInterval(slices_time_interval),
+                                                      filename = prefix * "_xy",
+                                                      overwrite_existing = true)
 
-    simulation.output_writers[:section] = JLD2OutputWriter(model, slice_outputs;
-                                                           indices = section_indices,
-                                                           schedule = TimeInterval(slices_time_interval),
-                                                           filename = prefix * "_section",
-                                                           overwrite_existing = true)
+    simulation.output_writers[:xz] = JLD2OutputWriter(model, slice_outputs;
+                                                      indices = (:, 1, :),
+                                                      schedule = TimeInterval(slices_time_interval),
+                                                      filename = prefix * "_xz",
+                                                      overwrite_existing = true)
+
+    simulation.output_writers[:yz] = JLD2OutputWriter(model, slice_outputs;
+                                                      indices = (1, :, :),
+                                                      schedule = TimeInterval(slices_time_interval),
+                                                      filename = prefix * "_yz",
+                                                      overwrite_existing = true)
 
     #=
     field_outputs = (; u, v, w, ζ, η)
