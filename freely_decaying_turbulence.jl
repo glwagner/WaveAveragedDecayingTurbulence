@@ -125,15 +125,15 @@ very_deep_stokes_drift = UniformStokesDrift(∂z_uˢ=very_deep_s)
 @inline deep_s(z, t) = 0.4 * exp(4z)
 deep_stokes_drift = UniformStokesDrift(∂z_uˢ=deep_s)
 
-kinds = [#"isotropic",
-         #"rotating",
-         #"surface_waves",
-         "navid_surface_waves",
-         #"weak_surface_waves",
-         #"deep_surface_waves",
-         #"very_deep_surface_waves",
-         #"strong_surface_waves",
-         #"very_strong_surface_waves",
+kinds = ["isotropic",
+         "rotating",
+         "surface_waves",
+         #"navid_surface_waves",
+         "weak_surface_waves",
+         "deep_surface_waves",
+         "very_deep_surface_waves",
+         "strong_surface_waves",
+         "very_strong_surface_waves",
 ]
 
 for kind in kinds
@@ -251,6 +251,13 @@ for kind in kinds
                                                       schedule = TimeInterval(slices_time_interval),
                                                       filename = prefix * "_yz",
                                                       overwrite_existing = true)
+
+    U = Average(u, dims=(1, 2))
+    V = Average(v, dims=(1, 2))
+    simulation.output_writers[:avg] = JLD2OutputWriter(model, (u=U, v=V);
+                                                       schedule = TimeInterval(slices_time_interval),
+                                                       filename = prefix * "_averages",
+                                                       overwrite_existing = true)
 
     #=
     field_outputs = (; u, v, w, ζ, η)
