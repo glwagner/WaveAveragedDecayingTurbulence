@@ -22,7 +22,7 @@ h★ = 12
 t★ = h★^2 * sqrt(N²) / u★^2
 @show prettytime(t★)
 
-uˢ = 1.0
+uˢ = 0.5
 g = 9.81
 σm = 2π / 12
 σl = 2π / 24
@@ -43,7 +43,6 @@ end
 uˢ_strong = uˢ * k_medium / k_long
 
 @show uˢ_strong
-@show uˢ_weak
 
 cases = [
     "medium",
