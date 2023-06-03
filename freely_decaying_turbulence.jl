@@ -101,6 +101,9 @@ end
 
 coriolis = FPlane(f=0.1)
 
+@inline navid_s(z, t) = 0.2 * (z + 1/2)
+navid_stokes_drift = UniformStokesDrift(∂z_uˢ=navid_s)
+
 @inline s(z, t) = 0.1 * (z + 1)
 stokes_drift = UniformStokesDrift(∂z_uˢ=s)
 
@@ -123,8 +126,9 @@ very_deep_stokes_drift = UniformStokesDrift(∂z_uˢ=very_deep_s)
 deep_stokes_drift = UniformStokesDrift(∂z_uˢ=deep_s)
 
 kinds = [#"isotropic",
-         "rotating",
-         "surface_waves",
+         #"rotating",
+         #"surface_waves",
+         "navid_surface_waves",
          #"weak_surface_waves",
          #"deep_surface_waves",
          #"very_deep_surface_waves",
@@ -140,6 +144,8 @@ for kind in kinds
         kwargs = NamedTuple()
     elseif kind == "surface_waves"
         kwargs = (; stokes_drift)
+    elseif kind == "navid_surface_waves"
+        kwargs = (; stokes_drift=navid_stokes_drift)
     elseif kind == "strong_surface_waves"
         kwargs = (; stokes_drift=strong_stokes_drift)
     elseif kind == "very_strong_surface_waves"
