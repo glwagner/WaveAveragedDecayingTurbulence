@@ -5,7 +5,7 @@ using Printf
 using JLD2
 
 arch = GPU()
-Nx = Ny = Nz = 128
+Nx = Ny = Nz = 256
 x = y = (0, 128)
 z = (-64, 0)
 topology = (Periodic, Periodic, Bounded)
@@ -36,10 +36,10 @@ end
 @inline (ss::StokesShear)(z, t) = 2 * ss.k * ss.uˢ * exp(2 * ss.k * z)
 
 cases = [
-    "wind_medium_waves",
-    "wind_strong_waves",
-    "wind_only",
-    "cooling_medium_waves",
+    #"wind_medium_waves",
+    #"wind_strong_waves",
+    #"wind_only",
+    #"cooling_medium_waves",
     "cooling_strong_waves",
     "cooling_only",
 ]
@@ -60,6 +60,8 @@ for case in cases
     # h★² ~ Q * t★ / N²
     # → t★ = h★² * N² / Q
 
+    t★ = 0
+
     if case == "wind_only"
         stokes_drift = nothing
         u★ = 0.0
@@ -69,7 +71,7 @@ for case in cases
     elseif case == "cooling_only"
         stokes_drift = nothing
         u★ = 0.0
-        Q₀ = 1e-7
+        Q₀ = Q★
         C★ = 3.0
         t★ = h★^2 * N² / (C★ * Q₀)
     elseif case == "wind_medium_waves"
@@ -87,13 +89,13 @@ for case in cases
     elseif case == "cooling_medium_waves"
         stokes_drift = UniformStokesDrift(∂z_uˢ=StokesShear(k, c * ϵ_med^2))
         u★ = 0.0
-        Q₀ = 1e-7
+        Q₀ = Q★
         C★ = 3.0
         t★ = h★^2 * N² / (C★ * Q₀)
     elseif case == "cooling_strong_waves"
         stokes_drift = UniformStokesDrift(∂z_uˢ=StokesShear(k, c * ϵ_str^2))
         u★ = 0.0
-        Q₀ = 1e-7
+        Q₀ = Q★
         C★ = 3.0
         t★ = h★^2 * N² / (C★ * Q₀)
     end
@@ -101,7 +103,7 @@ for case in cases
     stop_time = t★ + 24hours
     @info string("Forcing acts until ", prettytime(t★))
 
-    parameters = (; t★, u★, Q₀)
+    @show parameters = (; t★, u★, Q₀)
     u_top_bc = FluxBoundaryCondition(τ; parameters)
     u_bcs = FieldBoundaryConditions(top=u_top_bc)
     
@@ -116,9 +118,17 @@ for case in cases
                                 # closure = AnisotropicMinimumDissipation(),
                                 advection = WENO())
 
-    ϵ(x, y, z) = 1e-1 * u★ * rand() * exp(z / 4)
-    bᵢ(x, y, z) = N² * z
-    set!(model, u=ϵ, v=ϵ, w=ϵ, b=bᵢ)
+    @show model
+
+    Δz = grid.Lz / grid.Nz
+    w★ = max((Δz * Q₀)^(1/3), u★)
+    ϵu(x, y, z) = 1e-1 * w★ * rand() * exp(z / 8)
+    ϵb(x, y, z) = 1e0 * N² * Δz * exp(z / 8)
+    bᵢ(x, y, z) = N² * z + ϵb(x, y, z)
+    set!(model, u=ϵu, v=ϵu, w=ϵu, b=bᵢ)
+
+    @show model.velocities.u
+    @show model.tracers.b
 
     simulation = Simulation(model, Δt=1.0; stop_time)
     wizard = TimeStepWizard(cfl=0.7, max_change=1.1)
@@ -170,24 +180,24 @@ for case in cases
     save_interval = 2minutes
 
     simulation.output_writers[:averages] = JLD2OutputWriter(model, (u=U, b=B, w²=W², e=E); init,
-                                                           schedule = TimeInterval(2minutes),
+                                                           schedule = TimeInterval(save_interval),
                                                            filename = prefix * "_statistics",
                                                            overwrite_existing = true)
 
     simulation.output_writers[:xy] = JLD2OutputWriter(model, outputs; init,
-                                                      schedule = TimeInterval(2minutes),
+                                                      schedule = TimeInterval(save_interval),
                                                       indices = (:, :, Nz),
                                                       filename = prefix * "_xy",
                                                       overwrite_existing = true)
 
     simulation.output_writers[:xz] = JLD2OutputWriter(model, outputs; init,
-                                                      schedule = TimeInterval(2minutes),
+                                                      schedule = TimeInterval(save_interval),
                                                       indices = (:, 1, :),
                                                       filename = prefix * "_xz",
                                                       overwrite_existing = true)
 
     simulation.output_writers[:yz] = JLD2OutputWriter(model, outputs; init,
-                                                      schedule = TimeInterval(2minutes),
+                                                      schedule = TimeInterval(save_interval),
                                                       indices = (1, :, :),
                                                       filename = prefix * "_yz",
                                                       overwrite_existing = true)
