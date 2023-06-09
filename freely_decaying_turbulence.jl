@@ -32,10 +32,22 @@ end
     return ξ² + η² + ζ²
 end
 
+Nx = Ny = Nz = 256
+
+kinds = [
+    #"isotropic",
+    #"rotating",
+    #"surface_waves",
+    #"weak_surface_waves",
+    #"deep_surface_waves",
+    #"very_deep_surface_waves",
+    "strong_surface_waves",
+    #"very_strong_surface_waves",
+]
+
 arch = Oceananigans.GPU()
 timestepper = :RungeKutta3
 advection = WENO()
-Nx = Ny = Nz = 256
 x = y = z = (0, 1)
 topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz); x, y, z, topology)
@@ -65,17 +77,17 @@ function set_zero_mean_velocity_and_rms_vorticity!(model, ω_rms=1)
 end
 
 """
-    simulate_isotropic_turbulence(u₀, v₀, w₀, ω_rms)
+    simulate_isotropic_turbulence(u₀, v₀, w₀, ω_rms_start, ω_rms_stop)
 
 Simulate the evolution of (u₀, v₀, w₀) scaled to have rms vorticity ω_rms
 until the rms vorticity decays to 1.
 """
-function simulate_isotropic_turbulence(u₀, v₀, w₀, ω_rms)
+function simulate_isotropic_turbulence(u₀, v₀, w₀, ω_rms_start, ω_rms_stop=1)
     model = NonhydrostaticModel(; grid, timestepper, advection)
     set!(model, u=u₀, v=v₀, w=w₀)
-    set_zero_mean_velocity_and_rms_vorticity!(model, ω_rms)
+    set_zero_mean_velocity_and_rms_vorticity!(model, ω_rms_start)
 
-    simulation = Simulation(model, Δt=1e-3, stop_time=1e4)
+    simulation = Simulation(model, Δt=1e-3, stop_time=1e3)
     wizard = TimeStepWizard(cfl=0.7)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(3))
 
@@ -93,7 +105,7 @@ function simulate_isotropic_turbulence(u₀, v₀, w₀, ω_rms)
         Ω = sqrt(mean(ω²))
         msg *= @sprintf(", sqrt(Ω²): %.2e", Ω)
 
-        if Ω <= 1
+        if Ω <= ω_rms_stop
             @info "Stopping simulation since rms|ω| = $Ω !"
             sim.running = false
         end
@@ -176,7 +188,7 @@ if !isfile(initial_conditions_filename)
     w₀ = zeros(Nx, Ny, Nz+1)
     w₀[:, :, 2:Nz] .= w₀′[:, :, 2:Nz]
 
-    ui, vi, wi = simulate_isotropic_turbulence(u₀, v₀, w₀, 100)
+    ui, vi, wi = simulate_isotropic_turbulence(u₀, v₀, w₀, 100, 10)
     
     #=  
     dummy_model = NonhydrostaticModel(; grid)
@@ -212,17 +224,6 @@ end
 
 @inline (s::ShallowStokesShear)(z, t) = s.shear * z
 @inline (s::DeepStokesShear)(z, t) = s.shear * sinh(s.scale * (z - 1)) / sinh(s.scale)
-
-kinds = [
-    #"isotropic",
-    #"rotating",
-    #"surface_waves",
-    #"weak_surface_waves",
-    "deep_surface_waves",
-    "very_deep_surface_waves",
-    "strong_surface_waves",
-    "very_strong_surface_waves",
-]
 
 for kind in kinds
 
