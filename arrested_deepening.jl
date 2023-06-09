@@ -64,7 +64,7 @@ for case in cases
 
     if case == "wind_only"
         stokes_drift = nothing
-        u★ = 0.0
+        u★ = 0.01
         Q₀ = 0.0
         C★ = 1.05
         t★ = h★^2 * sqrt(N²) / (C★ * u★^2)
@@ -100,7 +100,7 @@ for case in cases
         t★ = h★^2 * N² / (C★ * Q₀)
     end
         
-    stop_time = t★ + 24hours
+    stop_time = t★ + 48hours
     @info string("Forcing acts until ", prettytime(t★))
 
     @show parameters = (; t★, u★, Q₀)
@@ -110,11 +110,20 @@ for case in cases
     b_top_bc = FluxBoundaryCondition(Q; parameters)
     b_bcs = FieldBoundaryConditions(top=b_top_bc)
 
+    # Sponge layer for u, v, w, and T
+    gaussian_mask = GaussianMask{:z}(center=-grid.Lz, width=grid.Lz/10)
+    u_sponge = v_sponge = w_sponge = Relaxation(rate=1/3minutes, mask=gaussian_mask)
+
+    b_sponge = Relaxation(rate = 1/3minutes,
+                          target = LinearTarget{:z}(intercept=0, gradient=N²),
+                          mask = gaussian_mask)
+
     model = NonhydrostaticModel(; grid, stokes_drift,
                                 timestepper = :RungeKutta3,
                                 tracers = :b,
                                 buoyancy = BuoyancyTracer(),
                                 boundary_conditions = (; u=u_bcs, b=b_bcs),
+                                forcing = (; u=u_sponge, v=v_sponge, w=w_sponge, b=b_sponge),
                                 # closure = AnisotropicMinimumDissipation(),
                                 advection = WENO())
 
