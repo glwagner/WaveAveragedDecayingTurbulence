@@ -39,10 +39,11 @@ kinds = [
     #"rotating",
     #"surface_waves",
     #"weak_surface_waves",
-    #"deep_surface_waves",
-    #"very_deep_surface_waves",
+    #"very_weak_surface_waves",
+    "deep_surface_waves",
+    "very_deep_surface_waves",
     "strong_surface_waves",
-    #"very_strong_surface_waves",
+    "very_strong_surface_waves",
 ]
 
 arch = Oceananigans.GPU()
@@ -145,6 +146,7 @@ function velocity_spectral_shape(k)
     k₀ = 16 * 2π
     k′ = k / k₀
     return k′ * sqrt(exp(2 - (k′ + 1)^2 / 2))
+    #return ifelse(k′ < 1, k′^2, k′^(-5/6))
     # Some other piecewise choices:
     #    * ifelse(k′ < 1, k′, 1 / k′) --- this has a longer transient due to greater initial dissipation 
     #    * ifelse(k′ < 1, k′, sqrt(exp(-(k′-1)^2 / 2))) --- pretty much the same as above
@@ -188,17 +190,15 @@ if !isfile(initial_conditions_filename)
     w₀ = zeros(Nx, Ny, Nz+1)
     w₀[:, :, 2:Nz] .= w₀′[:, :, 2:Nz]
 
-    ui, vi, wi = simulate_isotropic_turbulence(u₀, v₀, w₀, 100, 10)
+    # ui, vi, wi = simulate_isotropic_turbulence(u₀, v₀, w₀, 100, 10)
     
-    #=  
     dummy_model = NonhydrostaticModel(; grid)
     set!(dummy_model, u=u₀, v=v₀, w=w₀)
-    set_zero_mean_velocity_and_rms_vorticity!(dummy_model, 1)
+    set_zero_mean_velocity_and_rms_vorticity!(dummy_model, 100)
     u, v, w = dummy_model.velocities
     ui = Array(interior(u))
     vi = Array(interior(v))
     wi = Array(interior(w))
-    =#
 
     file = jldopen(initial_conditions_filename, "a+")
     file["ui"] = ui
@@ -250,7 +250,7 @@ for kind in kinds
     model = NonhydrostaticModel(; grid, timestepper, advection, kwargs...)
     set!(model, u=ui, v=vi, w=wi)
 
-    simulation = Simulation(model, Δt=1e-3, stop_time=2e4)
+    simulation = Simulation(model, Δt=1e-3, stop_time=1e4)
     wizard = TimeStepWizard(cfl=0.7)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(3))
 
@@ -345,14 +345,12 @@ for kind in kinds
                                                        filename = prefix * "_averages",
                                                        overwrite_existing = true)
 
-    #=
-    field_outputs = (; u, v, w, ζ, η)
-    fields_time_interval = 100
-    simulation.output_writers[:fields] = JLD2OutputWriter(model, field_outputs;
-                                                          schedule = TimeInterval(fields_time_interval),
+    field_outputs = (; u, v, w)
+    schedule = SpecifiedTimes(0, 100, 200, 500, 1000, 2000, 10000)
+    simulation.output_writers[:fields] = JLD2OutputWriter(model, field_outputs; schedule,
                                                           filename = prefix * "_fields",
+                                                          with_halos = true,
                                                           overwrite_existing = true)
-    =#
 
     @info "Running $kind turbulence..."
     run!(simulation)
