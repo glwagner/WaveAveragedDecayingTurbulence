@@ -10,6 +10,7 @@ x = y = (0, 128)
 z = (-64, 0)
 topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz); x, y, z, topology)
+weno_order = 5
 
 @inline τ(x, y, t, p) = ifelse(t < p.t★, - p.u★^2, zero(t))
 @inline Q(x, y, t, p) = ifelse(t < p.t★, + p.Q₀, zero(t))
@@ -37,11 +38,11 @@ end
 
 cases = [
     #"wind_medium_waves",
-    #"wind_strong_waves",
-    #"wind_only",
+    "wind_strong_waves",
+    "wind_only",
     #"cooling_medium_waves",
-    "cooling_strong_waves",
-    "cooling_only",
+    #"cooling_strong_waves",
+    #"cooling_only",
 ]
 
 for case in cases
@@ -124,15 +125,14 @@ for case in cases
                                 buoyancy = BuoyancyTracer(),
                                 boundary_conditions = (; u=u_bcs, b=b_bcs),
                                 forcing = (; u=u_sponge, v=v_sponge, w=w_sponge, b=b_sponge),
-                                # closure = AnisotropicMinimumDissipation(),
-                                advection = WENO())
+                                advection = WENO(order=weno_order))
 
     @show model
 
     Δz = grid.Lz / grid.Nz
     w★ = max((Δz * Q₀)^(1/3), u★)
     ϵu(x, y, z) = 1e-1 * w★ * rand() * exp(z / 8)
-    ϵb(x, y, z) = 1e0 * N² * Δz * exp(z / 8)
+    ϵb(x, y, z) = 1e-1 * N² * Δz * rand() * exp(z / 8)
     bᵢ(x, y, z) = N² * z + ϵb(x, y, z)
     set!(model, u=ϵu, v=ϵu, w=ϵu, b=bᵢ)
 
@@ -140,7 +140,7 @@ for case in cases
     @show model.tracers.b
 
     simulation = Simulation(model, Δt=1.0; stop_time)
-    wizard = TimeStepWizard(cfl=0.7, max_change=1.1)
+    wizard = TimeStepWizard(cfl=0.5, max_change=1.1)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
     start_time = Ref(time_ns())
@@ -149,7 +149,10 @@ for case in cases
         msg *= @sprintf(", Δt: %s", prettytime(sim.Δt))
 
         u, v, w = sim.model.velocities
-        msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e)", maximum(abs, u), maximum(abs, v), maximum(abs, w))
+        msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e)",
+                        maximum(abs, interior(u)),
+                        maximum(abs, interior(v)),
+                        maximum(abs, interior(w)))
 
         elapsed = (time_ns() - start_time[]) / 1e9
         msg *= @sprintf(", wall time: %s", prettytime(elapsed))
