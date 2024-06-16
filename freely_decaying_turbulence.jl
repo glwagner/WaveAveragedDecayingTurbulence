@@ -32,23 +32,23 @@ end
     return ξ² + η² + ζ²
 end
 
-Nx = Ny = Nz = 256
+Nx = Ny = Nz = 128
 
 kinds = [
-    #"isotropic",
+    "isotropic",
     #"rotating",
     #"surface_waves",
     #"weak_surface_waves",
     #"very_weak_surface_waves",
-    "deep_surface_waves",
-    "very_deep_surface_waves",
-    "strong_surface_waves",
-    "very_strong_surface_waves",
+    #"deep_surface_waves",
+    #"very_deep_surface_waves",
+    #"strong_surface_waves",
+    #"very_strong_surface_waves",
 ]
 
 arch = Oceananigans.GPU()
 timestepper = :RungeKutta3
-advection = WENO()
+advection = WENO(order=9)
 x = y = z = (0, 1)
 topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz); x, y, z, topology)
@@ -346,7 +346,7 @@ for kind in kinds
                                                        overwrite_existing = true)
 
     field_outputs = (; u, v, w)
-    schedule = SpecifiedTimes(0, 100, 200, 500, 1000, 2000, 10000)
+    schedule = SpecifiedTimes(0, 100, 1000, 10000)
     simulation.output_writers[:fields] = JLD2OutputWriter(model, field_outputs; schedule,
                                                           filename = prefix * "_fields",
                                                           with_halos = true,
