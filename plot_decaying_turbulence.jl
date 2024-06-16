@@ -2,9 +2,10 @@ using CairoMakie
 using Oceananigans
 using Printf
 
-filename_waves     = "decaying_turbulence_256_surface_waves_slice.jld2"
-filename_isotropic = "decaying_turbulence_256_isotropic_slice.jld2"
-filename_rotating  = "decaying_turbulence_256_rotating_slice.jld2"
+N = 512
+filename_waves     = "decaying_turbulence_$(N)_surface_waves_xz.jld2"
+filename_isotropic = "decaying_turbulence_$(N)_isotropic_xz.jld2"
+filename_rotating  = "decaying_turbulence_$(N)_rotating_xy.jld2"
 
 set_theme!(Theme(fontsize=48))
 
@@ -28,15 +29,15 @@ hidespines!(axr)
 hidespines!(axw)
 hidespines!(axi)
 
-n = Observable(501)
+n = Observable(650)
 ωw = @lift interior(ωwt[$n], :, 1, :)
 ωi = @lift interior(ωit[$n], :, 1, :)
 ωr = @lift interior(ωrt[$n], :, :, 1)
 
-levels = -4e-2:1e-3:4e-2
+levels = -2e-2:2e-4:2e-2
 extendhigh = :auto
 extendlow = :auto
-colorrange = (-5e-2, 5e-2)
+colorrange = (-2e-2, 2e-2)
 colormap = :balance
 kw = (; levels, extendhigh, extendlow, colorrange, colormap)
 hm = contourf!(axr, ωr; kw...)

@@ -3,9 +3,9 @@ using Oceananigans
 using Printf
 
 N = 256
-filename_waves     = "decaying_turbulence_$(N)_surface_waves_slice.jld2"
-filename_isotropic = "decaying_turbulence_$(N)_isotropic_slice.jld2"
-filename_rotating  = "decaying_turbulence_$(N)_rotating_slice.jld2"
+filename_waves     = "decaying_turbulence_$(N)_strong_surface_waves_xz.jld2"
+filename_isotropic = "decaying_turbulence_$(N)_isotropic_xz.jld2"
+filename_rotating  = "decaying_turbulence_$(N)_rotating_xy.jld2"
 
 set_theme!(Theme(fontsize=48))
 
@@ -27,7 +27,7 @@ n = Observable(1)
 ωi = @lift interior(ωit[$n], :, 1, :)
 ωr = @lift interior(ωrt[$n], :, :, 1)
 
-colorrange = (-5e-2, 5e-2)
+colorrange = (-1e-1, 1e-1)
 hm = heatmap!(axr, ωr; colorrange, colormap=:balance)
 
 label = @lift @sprintf("Vorticity at t = % 5d", t[$n])
