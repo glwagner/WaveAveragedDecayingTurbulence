@@ -3,15 +3,17 @@ using Oceananigans
 
 N = 512
 filename_isotropic       = "decaying_turbulence_$(N)_isotropic_statistics.jld2"
+
+
+
+
+
+#filename_waves           = "decaying_turbulence_$(N)_surface_waves_statistics.jld2"
 #filename_rotating        = "decaying_turbulence_$(N)_rotating_statistics.jld2"
-filename_waves           = "decaying_turbulence_$(N)_surface_waves_statistics.jld2"
 #filename_strong_waves    = "decaying_turbulence_$(N)_strong_surface_waves_statistics.jld2"
 #filename_weak_waves      = "decaying_turbulence_$(N)_weak_surface_waves_statistics.jld2"
 #filename_very_weak_waves = "decaying_turbulence_$(N)_very_weak_surface_waves_statistics.jld2"
 
-N = 256
-filename_rotating        = "decaying_turbulence_$(N)_rotating_statistics.jld2"
-filename_strong_waves    = "decaying_turbulence_$(N)_strong_surface_waves_statistics.jld2"
 
 eit = FieldTimeSeries(filename_isotropic, "e")
 ert = FieldTimeSeries(filename_rotating, "e")
