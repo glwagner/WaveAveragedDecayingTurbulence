@@ -77,18 +77,18 @@ end
 #####
 
 kinds = [
-    "isotropic",
-    # "rotating",
-    # "weak_surface_waves",
-    # "medium_surface_waves",
-    #"strong_surface_waves",
-    #"very_weak_surface_waves",
-    #"deep_surface_waves",
+    #"isotropic",
+    #"rotating",
+    #"weak_surface_waves",
+    #"medium_surface_waves",
+    "strong_surface_waves",
+    "very_weak_surface_waves",
+    "deep_surface_waves",
     #"very_deep_surface_waves",
     #"very_strong_surface_waves",
 ]
 
-Nx = Ny = Nz = 384
+Nx = Ny = Nz = 256
 weno_order = 9
 cfl = 0.5
 arch = Oceananigans.GPU()
@@ -103,7 +103,6 @@ slices_saves = 400
 n_slices = range(-1, stop=4, length=slices_saves)
 slices_times = 10 .^ n_slices
 
-
 # Initial conditions parameters
 initialization_stop_time = 1e3
 initialization_stop_ω_rms = 10
@@ -115,7 +114,7 @@ topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7); x, y, z, topology)
 
 initial_conditions_filename = "initial_conditions_$Nx.jld2"
-#rm(initial_conditions_filename, force=true)
+# rm(initial_conditions_filename, force=true)
 
 if !isfile(initial_conditions_filename)
     Nx, Ny, Nz = size(grid)
