@@ -2,10 +2,11 @@ using GLMakie
 using Oceananigans
 using Printf
 
-medium_waves_name = "decaying_turbulence_256_surface_waves"
-deep_waves_name = "decaying_turbulence_256_deep_surface_waves"
-very_deep_waves_name = "decaying_turbulence_256_very_deep_surface_waves"
-strong_waves_name = "decaying_turbulence_256_very_strong_surface_waves"
+N = 384
+medium_waves_name = "decaying_turbulence_$(N)_9_medium_surface_waves"
+deep_waves_name = "decaying_turbulence_$(N)_9_deep_surface_waves"
+very_deep_waves_name = "decaying_turbulence_$(N)_9_deep_surface_waves"
+strong_waves_name = "decaying_turbulence_$(N)_9_strong_surface_waves"
 
 medium_waves_slice_filename    = medium_waves_name * "_xz.jld2"
 medium_waves_averages_filename = medium_waves_name * "_averages.jld2"
@@ -31,11 +32,11 @@ Udt = FieldTimeSeries(deep_waves_averages_filename, "u")
 ωvt = FieldTimeSeries(very_deep_waves_slice_filename, "η")
 Uvt = FieldTimeSeries(very_deep_waves_averages_filename, "u")
 
-t = ωwt.times
+t = ωmt.times
 Nt = length(t)
 
 set_theme!(Theme(fontsize=24))
-fig = Figure(resolution=(1600, 600))
+fig = Figure(size=(1600, 600))
 
 axo1 = Axis(fig[1, 1], aspect=1, xlabel="x", ylabel="z")
 axo2 = Axis(fig[1, 2], aspect=1, xlabel="x", ylabel="z")
@@ -68,15 +69,15 @@ colorrange = (-5e-2, 5e-2)
 colormap = :balance
 #kw = (; levels, extendhigh, extendlow, colorrange, colormap)
 kw = (; colorrange, colormap)
-x, y, z = nodes(ωwt)
+x, y, z = nodes(ωmt)
 z = z .+ 1
-contourf!(axo1, x, z, ωm; kw...)
-contourf!(axo2, x, z, ωs; kw...)
+#contourf!(axo1, x, z, ωm; kw...)
+#contourf!(axo2, x, z, ωs; kw...)
 heatmap!(axo1, x, z, ωm; kw...)
 heatmap!(axo2, x, z, ωs; kw...)
 #Colorbar(fig[1, 1:3], hm; vertical=false, flipaxis=true, label="Vorticity")
 
-z = znodes(Uwt) .+ 1
+z = znodes(Umt) .+ 1
 lines!(axu, Um, z)
 lines!(axu, Us, z)
 lines!(axu, Ud, z)

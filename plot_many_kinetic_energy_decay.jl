@@ -1,19 +1,34 @@
 using GLMakie
 using Oceananigans
 
-N = 256
+N = 384
 
-cases = ["isotropic",
-         "rotating",
-         #"strong_surface_waves",
-         "medium_surface_waves",
-         "surface_waves"]
+cases = [
+    "isotropic",
+    "rotating",
+    #"strong_surface_waves",
+    "medium_surface_waves",
+    "weak_surface_waves",
+    "very_weak_surface_waves",
+]
 
-labels = ["isotropic",
-          "rotating",
-         # "strong_surface_waves",
-          "medium_surface_waves",
-          "weak_surface_waves"]
+labels = [
+    "Isotropic",
+    "Rotating with f = 1/4",
+    #"strong_surface_waves",
+    "Surface-wave-modulated with ∂z uˢ = z / 2",
+    "Surface-wave-modulated with ∂z uˢ = z / 4",
+    "Surface-wave-modulated with ∂z uˢ = z / 8",
+]
+
+background_vorticities = [
+    0.0,
+    0.25,
+    #1.0,
+    0.5,
+    0.25,
+    0.125,
+]
 
 filenames = ["decaying_turbulence_$(N)_9_$(case)_statistics.jld2" for case in cases]
 es = [FieldTimeSeries(name, "e") for name in filenames]
@@ -63,58 +78,53 @@ function estimate_vorticity_parameter(e, ϵ₀, α)
 end
 
 set_theme!(Theme(fontsize=24))
-fig = Figure(size=(1400, 1000))
-ax1 = Axis(fig[1, 1], xscale=log10, yscale=log10, xlabel="Time", ylabel="Kinetic energy")
-ax2 = Axis(fig[2, 1], xscale=log10, yscale=identity, xlabel="Time", ylabel="Data / model ratio")
+fig = Figure(size=(900, 450))
+ax1 = Axis(fig[1, 1], xscale=log10, yscale=log10, xlabel="Time", ylabel="Normalized kinetic energy, k / k(t=0)")
+#ax2 = Axis(fig[2, 1], xscale=log10, yscale=identity, xlabel="Time", ylabel="Data / model ratio")
 
-for (et, label) in zip(es, labels)
+for (et, label, Ω) in zip(es, labels, background_vorticities)
     e = view(et.data, 1, 1, 1, :)
     t = et.times    
     Nt = length(t)
     t̃ = view(t, 2:Nt)
 
-    e₀ = e[1]
+    @show e₀ = e[1]
     ẽ = view(e, 2:Nt)
-    ln = lines!(ax1, t̃, ẽ ./ e₀, alpha=0.6; linewidth=6, label)
+    ln = lines!(ax1, t̃, ẽ ./ e₀, alpha=0.6; linewidth=4, label)
 
     # Estimate ϵ
-    α = 11/6
-    ϵ₀, k₀, t₀ = estimate_dissipation(1, 100, e, t, α)
+    #α = 11/6
+    α = 1.76 #11/6
+    #α = 1.7 #11/6
+    ϵ₀, k₀, t₀ = estimate_dissipation(1, 2, e, t, α)
 
-    if label == "isotropic"
+    if label == "Isotropic"
         e★ = e_isotropic.(t̃, k₀, ϵ₀, t₀, α)
     else
         βΩ = estimate_vorticity_parameter(e, ϵ₀, α)
+        @show β = βΩ / Ω
+        if !occursin("Rotating", label)
+            #βΩ = 0.013868141255849906 * Ω
+            #βΩ = 0.0139 * Ω
+            βΩ = 0.023 * Ω
+        end
         e★ = e_vortical.(t̃, k₀, ϵ₀, t₀, α, βΩ)
     end
 
-    lines!(ax1, t̃, e★ ./ e₀; label, linewidth=2, linestyle=:dash, color=ln.color)
-    lines!(ax2, t̃, ẽ ./ e★, alpha=0.6; label, linewidth=4)
+    lines!(ax1, t̃, e★ ./ e₀; linewidth=2, linestyle=:dash, color=ln.color)
+    #lines!(ax2, t̃, ẽ ./ e★, alpha=0.6; label, linewidth=4)
 end
 
-axislegend(ax2, position=:lt)
+axislegend(ax1, position=:lb)
 
-ax3 = Axis(fig[3, 1], xscale=log10, yscale=identity, xlabel="Time", ylabel="rms vorticity")
+#ax3 = Axis(fig[3, 1], xscale=log10, yscale=identity, xlabel="Time", ylabel="rms vorticity")
 
-N = 256
-case = "rotating"
-filename = "decaying_turbulence_$(N)_9_$(case)_statistics.jld2"
-ω²t = FieldTimeSeries(filename, "ω²")
-t = first(es).times
-Ω = sqrt.(ω²t[:])
+xlims!(ax1, 1e-1, 2e4)
+#ylims!(ax2, 0.5, 1.2)
 
-lines!(ax3, t[2:end], Ω[2:end], linewidth=4)
-
-t0 = 1
-t1 = 1e2
-
-#=
-xlims!(ax1, t0, t1)
-xlims!(ax2, t0, t1)
-xlims!(ax3, t0, t1)
-=#
-
-ylims!(ax2, 0.9, 1.2)
+hidespines!(ax1, :t, :r)
 
 display(fig)
+
+save("kinetic_energy.png", fig)
 

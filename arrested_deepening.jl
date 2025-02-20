@@ -10,7 +10,7 @@ x = y = (0, 128)
 z = (-64, 0)
 topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz); x, y, z, topology)
-weno_order = 5
+weno_order = 9
 
 @inline τ(x, y, t, p) = ifelse(t < p.t★, - p.u★^2, zero(t))
 @inline Q(x, y, t, p) = ifelse(t < p.t★, + p.Q₀, zero(t))
@@ -38,10 +38,10 @@ end
 
 cases = [
     #"wind_medium_waves",
-    "wind_strong_waves",
-    "wind_only",
+    #"wind_strong_waves",
+    #"wind_only",
     #"cooling_medium_waves",
-    #"cooling_strong_waves",
+    "cooling_strong_waves",
     #"cooling_only",
 ]
 
