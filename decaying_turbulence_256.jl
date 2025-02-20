@@ -57,9 +57,11 @@ function set_zero_mean_velocity_and_rms_vorticity!(model, ω_rms=1)
 end
 
 function velocity_spectral_shape(k)
-    k₀ = 16 * 2π
+    k₀ = 32 * 2π
     k′ = k / k₀
-    return k′ * sqrt(exp(2 - (k′ + 1)^2 / 2))
+    return k * sqrt(exp(-2 * k′^2))
+    #return ifelse(k′ < 1, k′, sqrt(exp(-(k′-1)^2 / 2)))
+    #return k′ * sqrt(exp(2 - (k′ + 1)^2 / 2))
     #return ifelse(k′ < 1, k′^2, k′^(-5/6))
     # Some other piecewise choices:
     #    * ifelse(k′ < 1, k′, 1 / k′) --- this has a longer transient due to greater initial dissipation 
@@ -75,30 +77,46 @@ end
 #####
 
 kinds = [
-    "isotropic",
+    #"isotropic",
     #"rotating",
-    #"surface_waves",
     #"weak_surface_waves",
-    #"very_weak_surface_waves",
-    #"deep_surface_waves",
+    #"medium_surface_waves",
+    "strong_surface_waves",
+    "very_weak_surface_waves",
+    "deep_surface_waves",
     #"very_deep_surface_waves",
-    #"strong_surface_waves",
     #"very_strong_surface_waves",
 ]
 
-Nx = Ny = Nz = 128
+Nx = Ny = Nz = 256
+weno_order = 9
+cfl = 0.5
 arch = Oceananigans.GPU()
+stop_time = 1e4
+
+statistics_saves = 1000
+n_statistics = range(-2, stop=4, length=statistics_saves)
+statistics_times = 10 .^ n_statistics
+
+slices_time_interval = 10
+slices_saves = 400
+n_slices = range(-1, stop=4, length=slices_saves)
+slices_times = 10 .^ n_slices
+
+# Initial conditions parameters
+initialization_stop_time = 1e3
+initialization_stop_ω_rms = 10
+
 timestepper = :RungeKutta3
-advection = WENO(order=11)
+advection = WENO(order=weno_order)
 x = y = z = (0, 1)
 topology = (Periodic, Periodic, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), halo=(7, 7, 7); x, y, z, topology)
 
 initial_conditions_filename = "initial_conditions_$Nx.jld2"
-rm(initial_conditions_filename, force=true)
+# rm(initial_conditions_filename, force=true)
 
 if !isfile(initial_conditions_filename)
-    # Generate initial condition from a simulation of isotropic turbulence
     Nx, Ny, Nz = size(grid)
 
     spectral_grid = ThreeDGrid(nx=Nx, Lx=1)
@@ -109,15 +127,6 @@ if !isfile(initial_conditions_filename)
     θv = randn(Complex{FT}, size(spectral_grid.Krsq))
     θw = randn(Complex{FT}, size(spectral_grid.Krsq))
     
-    #=
-    ϕu = rand(size(spectral_grid.Krsq))
-    ϕv = rand(size(spectral_grid.Krsq))
-    ϕw = rand(size(spectral_grid.Krsq))
-    θu = @. exp(2π * im * ϕu)
-    θv = @. exp(2π * im * ϕv)
-    θw = @. exp(2π * im * ϕw)
-    =#
-
     û = @. θu * velocity_spectral_shape(k)
     v̂ = @. θv * velocity_spectral_shape(k)
     ŵ = @. θw * velocity_spectral_shape(k)
@@ -133,10 +142,58 @@ if !isfile(initial_conditions_filename)
     w₀ = zeros(Nx, Ny, Nz+1)
     w₀[:, :, 2:Nz] .= w₀′[:, :, 2:Nz]
 
-    dummy_model = NonhydrostaticModel(; grid)
-    set!(dummy_model, u=u₀, v=v₀, w=w₀)
-    set_zero_mean_velocity_and_rms_vorticity!(dummy_model, 10)
-    u, v, w = dummy_model.velocities
+    init_model= NonhydrostaticModel(; grid, timestepper, advection)
+    set!(init_model, u=u₀, v=v₀, w=w₀)
+    set_zero_mean_velocity_and_rms_vorticity!(init_model, 1000)
+
+    max_u = maximum(abs, init_model.velocities.u)
+    Δx = 1 / Nx
+    Δt = 1e-3 * Δx / max_u
+
+    simulation = Simulation(init_model; Δt, stop_time=initialization_stop_time)
+    conjure_time_step_wizard!(simulation, IterationInterval(3); cfl)
+
+    start_time = Ref(time_ns())
+    u, v, w = init_model.velocities
+    ω² = KernelFunctionOperation{Face, Face, Face}(ω²ᶠᶠᶠ, grid, u, v, w)
+
+    function progress(sim)
+        msg = @sprintf("Iter: % 6d, time: %7.2f", iteration(sim), time(sim))
+        msg *= @sprintf(", Δt: %.2e", sim.Δt)
+
+        u, v, w = sim.model.velocities
+        msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e)", maximum(abs, u), maximum(abs, v), maximum(abs, w))
+
+        Ω = sqrt(mean(ω²))
+        msg *= @sprintf(", rms(ω): %.2e", Ω)
+
+        elapsed = (time_ns() - start_time[]) / 1e9
+        msg *= @sprintf(", wall time: %s", prettytime(elapsed))
+        start_time[] = time_ns()
+
+        @info msg
+
+        return nothing
+    end
+
+    add_callback!(simulation, progress, IterationInterval(100))
+
+    function stop_simulation(sim)
+        Ω = sqrt(mean(ω²))
+        if Ω < initialization_stop_ω_rms
+            @info "rms(ω) < initialization_stop_ω_rms, stopping simulation."
+            progress(sim)
+            simulation.running = false
+        end
+        return nothing
+    end
+
+    add_callback!(simulation, stop_simulation, IterationInterval(10))
+
+    @info "Generating initial conditions for Nx = $(grid.Nx)..."
+    run!(simulation)
+
+    u, v, w = init_model.velocities
     ui = Array(interior(u))
     vi = Array(interior(v))
     wi = Array(interior(w))
@@ -168,36 +225,46 @@ end
 
 for kind in kinds
 
+    local max_u  
+    local ω²
+    local Δx
+    local Δt
+    local u  
+    local v  
+    local w  
+    local start_time  
+    local simulation
+
     if kind == "rotating"
-        kwargs = (; coriolis = FPlane(f=0.1))
+        kwargs = (; coriolis = FPlane(f=0.25))
     elseif kind == "isotropic"
         kwargs = NamedTuple()
-    elseif kind == "surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.1)))
+    elseif kind == "medium_surface_waves"
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.5)))
     elseif kind == "strong_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.2)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(1.0)))
     elseif kind == "very_strong_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.4)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(2.0)))
     elseif kind == "weak_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.05)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.25)))
     elseif kind == "very_weak_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.025)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.1)))
     elseif kind == "deep_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=DeepStokesShear(0.4, 4.0)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=DeepStokesShear(2.0, 4.0)))
     elseif kind == "very_deep_surface_waves"
-        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=DeepStokesShear(0.8, 8.0)))
+        kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=DeepStokesShear(2.0, 8.0)))
     end
                                 
     model = NonhydrostaticModel(; grid, timestepper, advection, kwargs...)
     set!(model, u=ui, v=vi, w=wi)
 
-    max_u = 2
+    max_u = maximum(abs, model.velocities.u)
     Δx = 1 / Nx
-    Δt = 0.1 * Δx / max_u
-    simulation = Simulation(model, Δt=Δt, stop_time=1e3)
-    conjure_time_step_wizard!(simulation, cfl=0.1, IterationInterval(3))
+    Δt = 1e-3 * Δx / max_u
+    simulation = Simulation(model; Δt, stop_time)
+    conjure_time_step_wizard!(simulation, IterationInterval(3); cfl)
 
-    prefix = "decaying_turbulence_$(Nx)_$(kind)"
+    prefix = "decaying_turbulence_$(Nx)_$(weno_order)_$(kind)"
 
     u, v, w = model.velocities
     η = ∂x(w) - ∂z(u)
@@ -224,8 +291,8 @@ for kind in kinds
     start_time = Ref(time_ns())
 
     function progress(sim)
-        msg = @sprintf("Iter: %d, time: %.2f", iteration(sim), time(sim))
-        msg *= @sprintf(", Δt: %.4f", sim.Δt)
+        msg = @sprintf("Iter: % 6d, time: %7.2f", iteration(sim), time(sim))
+        msg *= @sprintf(", Δt: %.2e", sim.Δt)
 
         u, v, w = sim.model.velocities
         msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e)", maximum(abs, u), maximum(abs, v), maximum(abs, w))
@@ -253,57 +320,53 @@ for kind in kinds
     else
         statistics_outputs = (; e=E, η²=Y², ω²=Ω², max_η², max_e)
         slice_outputs = (; η, u, v, w, e)
+        #statistics_outputs = (; e=E)
+        #slice_outputs = (; e)
     end
-
-    statistics_time_interval = 10
-    slices_time_interval = 100
-
-    saves = 200
-    n = range(0, stop=3, length=saves)
-    statistics_times = 10 .^ n
 
     simulation.output_writers[:statistics] = JLD2OutputWriter(model, statistics_outputs;
                                                               schedule = SpecifiedTimes(statistics_times),
                                                               filename = prefix * "_statistics",
                                                               overwrite_existing = true)
 
-    #=
     simulation.output_writers[:xy] = JLD2OutputWriter(model, slice_outputs;
                                                       indices = (:, :, Nz),
-                                                      schedule = TimeInterval(slices_time_interval),
+                                                      #schedule = TimeInterval(slices_time_interval),
+                                                      schedule = SpecifiedTimes(slices_times),
                                                       filename = prefix * "_xy",
                                                       overwrite_existing = true)
 
     simulation.output_writers[:xz] = JLD2OutputWriter(model, slice_outputs;
                                                       indices = (:, 1, :),
-                                                      schedule = TimeInterval(slices_time_interval),
+                                                      #schedule = TimeInterval(slices_time_interval),
+                                                      schedule = SpecifiedTimes(slices_times),
                                                       filename = prefix * "_xz",
                                                       overwrite_existing = true)
 
     simulation.output_writers[:yz] = JLD2OutputWriter(model, slice_outputs;
                                                       indices = (1, :, :),
-                                                      schedule = TimeInterval(slices_time_interval),
+                                                      #schedule = TimeInterval(slices_time_interval),
+                                                      schedule = SpecifiedTimes(slices_times),
                                                       filename = prefix * "_yz",
                                                       overwrite_existing = true)
 
     U = Average(u, dims=(1, 2))
     V = Average(v, dims=(1, 2))
     simulation.output_writers[:avg] = JLD2OutputWriter(model, (u=U, v=V);
-                                                       schedule = TimeInterval(slices_time_interval),
+                                                      # schedule = TimeInterval(slices_time_interval),
+                                                       schedule = SpecifiedTimes(slices_times),
                                                        filename = prefix * "_averages",
                                                        overwrite_existing = true)
 
     field_outputs = (; u, v, w)
-    schedule = SpecifiedTimes(0, 100, 1000, 10000)
+    schedule = SpecifiedTimes(100, 1000, 10000)
     simulation.output_writers[:fields] = JLD2OutputWriter(model, field_outputs; schedule,
                                                           filename = prefix * "_fields",
                                                           with_halos = true,
                                                           overwrite_existing = true)
 
-    =#
-    @info "Running $kind turbulence..."
+    @info "Running $kind turbulence with N = $(grid.Nx)..."
 
     run!(simulation)
 end
-
 
