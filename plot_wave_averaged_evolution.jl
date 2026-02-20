@@ -17,6 +17,10 @@ averages_filename_medium_waves = "decaying_turbulence_$(N)_9_medium_surface_wave
 ωdt = FieldTimeSeries(filename_deep_waves, "η")
 ωst = FieldTimeSeries(filename_medium_waves, "η")
 
+vmt = FieldTimeSeries(filename_very_weak_waves, "v")
+vdt = FieldTimeSeries(filename_deep_waves, "v")
+vst = FieldTimeSeries(filename_medium_waves, "v")
+
 Umt = FieldTimeSeries(averages_filename_very_weak_waves, "u")
 Udt = FieldTimeSeries(averages_filename_deep_waves, "u")
 Ust = FieldTimeSeries(averages_filename_medium_waves, "u")
@@ -28,59 +32,69 @@ Nt = length(t)
 @show length(Udt)
 @show length(Ust)
 
-n1 = 250
-n2 = 297
+n1 = 187
+n2 = 290
 n3 = 322
 
 set_theme!(Theme(fontsize=24))
-fig = Figure(size=(1700, 1200))
+fig = Figure(size=(1630, 850))
 
 uticks = [-1e-3, 0, 1e-3]
-yticks = [0, 0.25, 0.5, 0.75, 1.0]
-axm1 = Axis(fig[2, 3], aspect=1, xlabel="x", ylabel="y", title="Medium waves")
-axs1 = Axis(fig[2, 2], aspect=1, xlabel="x", ylabel="z", title="Strong waves")
+yticks = [-1.0, -0.75, -0.5, -0.25, 0]
+axm1 = Axis(fig[2, 3], aspect=1, xlabel="x", ylabel="y", title="Weak waves")
+axs1 = Axis(fig[2, 2], aspect=1, xlabel="x", ylabel="z", title="Medium waves")
 axd1 = Axis(fig[2, 1], aspect=1, xlabel="x", ylabel="z", title="Deep waves")
 axu1 = Axis(fig[2, 4]; xlabel="∫ u dx dy", ylabel="z", yaxisposition=:right, #xticks=uticks,
             xaxisposition=:top, ytrimspine=true, yticks)
 
-axm2 = Axis(fig[3, 3], aspect=1, xlabel="x", ylabel="y")
-axs2 = Axis(fig[3, 2], aspect=1, xlabel="x", ylabel="z")
-axd2 = Axis(fig[3, 1], aspect=1, xlabel="x", ylabel="z")
+axm2 = Axis(fig[3, 3], aspect=1, xlabel="x")
+axs2 = Axis(fig[3, 2], aspect=1, xlabel="x") 
+axd2 = Axis(fig[3, 1], aspect=1, xlabel="x")
 axu2 = Axis(fig[3, 4]; xlabel="∫ u dx dy", ylabel="z", yaxisposition=:right, #xticks=uticks,
             ytrimspine=true, yticks)
 
+            #=
 axm3 = Axis(fig[4, 3], aspect=1, xlabel="x", ylabel="y")
 axs3 = Axis(fig[4, 2], aspect=1, xlabel="x", ylabel="z")
 axd3 = Axis(fig[4, 1], aspect=1, xlabel="x", ylabel="z")
 axu3 = Axis(fig[4, 4]; xlabel="∫ u dx dy", ylabel="z", yaxisposition=:right, #xticks=uticks,
             ytrimspine=true, yticks)
+            =#
 
-for ax in (axm1, axs1, axd1, axm2, axs2, axd2)
+for ax in (axm1, axs1, axd1) #, axm2, axs2, axd2)
     hidedecorations!(ax)
     hidespines!(ax)
 end
 
+for ax in (axm2, axs2, axd2)
+    hidedecorations!(ax, label=false)
+    hidespines!(ax)
+end
+
+#=
 for ax in (axm3, axs3, axd3)
     hidespines!(ax)
     hideydecorations!(ax)
     hidexdecorations!(ax, label=false)
 end
+=#
 
-for ax in (axu1, axu2, axu3)
+for ax in (axu1, axu2) #, axu3)
     hidespines!(ax, :t, :l, :b)
-    xlims!(ax, -2e-2, 1.2e-2)
+    xlims!(ax, -1e-2, 2.5e-2)
     #hidexdecorations!(ax, label=false)
 end
 
-hidexdecorations!(axu2)
+hidexdecorations!(axu1, grid=false)
+hidexdecorations!(axu2, grid=false, label=false)
 
 levels = -4e-2:1e-3:4e-2
 extendhigh = :auto
 extendlow = :auto
 #colorrange = (-3e-2, 3e-2)
-colorrange = (-1, 1)
+colorrange = (-0.01, 0.01)
 colormap = :balance
-uϵ = 7e-4
+uϵ = 0.01
 #kw = (; levels, extendhigh, extendlow, colorrange, colormap)
 kw = (; colorrange, colormap)
 plotter = heatmap!
@@ -89,15 +103,15 @@ lineskw = (; linewidth=6)
 colors = Makie.wong_colors(0.6)
 
 z = znodes(Umt)
-z = collect(z) .+ 1
+z = collect(z)
 
 n = n1 
-ωm = interior(ωmt[n], :, 1, :)
-ωd = interior(ωdt[n], :, 1, :)
-ωs = interior(ωst[n], :, 1, :)
-heatmap!(axm1, ωm; kw...)
-heatmap!(axs1, ωs; kw...)
-hm = heatmap!(axd1, ωd; kw...)
+vm = interior(vmt[n], :, 1, :)
+vd = interior(vdt[n], :, 1, :)
+vs = interior(vst[n], :, 1, :)
+heatmap!(axm1, vm; kw...)
+heatmap!(axs1, vs; kw...)
+hm = heatmap!(axd1, vd; kw...)
 
 Um = interior(Umt[n], 1, 1, :)
 Ud = interior(Udt[n], 1, 1, :)
@@ -110,16 +124,16 @@ lines!(axu1, Um .+ 2uϵ, z; color=colors[1], label=" Medium \n waves", lineskw..
 #vlines!(axu1, 1uϵ, z; color=(:black, 0.5), linewidth=0.5)
 #vlines!(axu1, 2uϵ, z; color=(:black, 0.5), linewidth=0.5)
 
-uˢd = @. uϵ/2 * exp(8 * (z - 1))
+uˢd = @. uϵ/2 * exp(8 * z)
 # lines!(axu1, uˢd, z; color=(:black, 0.5), linewidth=1.0, linestyle=:dash)
 
 n = n2
-ωm = interior(ωmt[n], :, 1, :)
-ωd = interior(ωdt[n], :, 1, :)
-ωs = interior(ωst[n], :, 1, :)
-heatmap!(axm2, ωm; kw...)
-heatmap!(axs2, ωs; kw...)
-heatmap!(axd2, ωd; kw...)
+vm = interior(vmt[n], :, 1, :)
+vd = interior(vdt[n], :, 1, :)
+vs = interior(vst[n], :, 1, :)
+heatmap!(axm2, vm; kw...)
+heatmap!(axs2, vs; kw...)
+heatmap!(axd2, vd; kw...)
 
 Um = interior(Umt[n], 1, 1, :)
 Ud = interior(Udt[n], 1, 1, :)
@@ -133,9 +147,10 @@ lines!(axu2, Um .+ 2uϵ, z; color=colors[1], label=" Medium \n waves", lineskw..
 # vlines!(axu2, 1uϵ, z; color=(:black, 0.5), linewidth=0.5)
 # vlines!(axu2, 2uϵ, z; color=(:black, 0.5), linewidth=0.5)
 
-uˢd = @. uϵ/2 * exp(8 * (z - 1))
+uˢd = @. uϵ/2 * exp(8 * z)
 # lines!(axu2, uˢd, z; color=(:black, 0.5), linewidth=1.0, linestyle=:dash)
 
+#=
 n = n3
 ωm = interior(ωmt[n], :, 1, :)
 ωd = interior(ωdt[n], :, 1, :)
@@ -155,14 +170,15 @@ lines!(axu3, Um .+ 2uϵ, z; color=colors[1], lineskw...)
 # vlines!(axu3, 1uϵ, z; color=(:black, 0.5), linewidth=0.5)
 # vlines!(axu3, 2uϵ, z; color=(:black, 0.5), linewidth=0.5)
 
-uˢd = @. uϵ/2 * exp(8 * (z - 1))
+uˢd = @. uϵ/2 * exp(8 * z)
 # lines!(axu3, uˢd, z; color=(:black, 0.5), linewidth=1.0, linestyle=:dash)
+=#
 
-Colorbar(fig[1, 1:3], hm; vertical=false, flipaxis=true, label="Vorticity")
+Colorbar(fig[1, 1:3], hm; vertical=false, flipaxis=true, label="v(x, y=0, z)")
 
-Label(fig[2, 0], "t = 5×10³", tellheight=false)
-Label(fig[3, 0], "t = 10⁴", tellheight=false)
-Label(fig[4, 0], "t = 2×10⁴", tellheight=false)
+Label(fig[2, 0], "t = 20", tellheight=false)
+Label(fig[3, 0], "t = 400", tellheight=false)
+#Label(fig[4, 0], "t = 2×10⁴", tellheight=false)
 
 display(fig)
 
