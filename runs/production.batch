@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=wise-prod
+#SBATCH --output=runs/wise-prod-%j-%x.log
+#SBATCH --time=04:00:00
+#SBATCH --nodes=1
+#SBATCH --partition=gpu-prod
+#SBATCH --nodelist=gpu-prod-st-gpu-prod-2
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --exclusive
+
+set -euo pipefail
+cd /shared/home/greg/WaveAveragedDecayingTurbulence
+
+echo "=== node ==="; hostname; nvidia-smi -L
+echo "=== job ==="; echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+echo "=== julia ==="; julia --version
+
+export N=256
+export STOP_TIME=1000
+unset SANITY
+export JULIA_CUDA_HARD_MEMORY_LIMIT=70%
+
+echo "=== running medium_surface_waves to t=1000 ==="
+julia --project=. runs/decaying_turbulence_256_wise.jl

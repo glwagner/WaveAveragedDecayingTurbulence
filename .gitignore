@@ -28,5 +28,7 @@ docs/site/
 *.png
 *.pdf
 *.swp
+*.log
+*.bak
 
 *.DS_Store
