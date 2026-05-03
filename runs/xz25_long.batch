@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=xz25-long
+#SBATCH --output=runs/xz25-long-%j-%x.log
+#SBATCH --time=08:00:00
+#SBATCH --nodes=1
+#SBATCH --partition=gpu-prod
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --exclusive
+
+set -euo pipefail
+cd /shared/home/greg/WaveAveragedDecayingTurbulence
+
+KIND="${KIND:-medium_surface_waves}"
+
+echo "=== node ==="; hostname; nvidia-smi -L
+echo "=== job ==="; echo "SLURM_JOB_ID=$SLURM_JOB_ID, KIND=$KIND"
+echo "=== julia ==="; julia --version
+
+export N="${N:-256}"
+export STOP_TIME="${STOP_TIME:-1e4}"
+export ARCH=GPU
+export JULIA_CUDA_HARD_MEMORY_LIMIT=70%
+
+echo "=== running xz25 $KIND, N=$N, t=$STOP_TIME on GPU ==="
+KIND=$KIND julia --project=runs runs/decaying_turbulence_xz25.jl

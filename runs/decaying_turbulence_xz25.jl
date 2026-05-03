@@ -18,6 +18,12 @@ using JLD2
 
 using Oceananigans.Operators
 
+# Newer Oceananigans (≥ 0.97) puts the GPU() constructor in an extension that
+# only loads when CUDA is in scope.
+if get(ENV, "ARCH", "GPU") == "GPU"
+    using CUDA
+end
+
 @inline ϕ²(i, j, k, grid, ϕ) = @inbounds ϕ[i, j, k]^2
 
 @inline function tke25(i, j, k, grid, u, v, w)
@@ -29,16 +35,18 @@ end
 
 @inline y_enstrophy25(i, j, k, grid, u, v, w) = (∂xᶠᶜᶠ(i, j, k, grid, w) - ∂zᶠᶜᶠ(i, j, k, grid, u))^2
 
-const N = parse(Int,     get(ENV, "N",         "256"))
+const N         = parse(Int,     get(ENV, "N",         "256"))
 const STOP_TIME = parse(Float64, get(ENV, "STOP_TIME", "1e4"))
 const KIND      = get(ENV, "KIND", "medium_surface_waves")  # or "isotropic"
+const LX        = parse(Float64, get(ENV, "LX",        "1.0"))   # x-domain length
+const LZ        = parse(Float64, get(ENV, "LZ",        "1.0"))   # z-domain length
 
 Nx = N; Nz = N
 weno_order = 9
 cfl = 0.5
 arch = get(ENV, "ARCH", "GPU") == "GPU" ? Oceananigans.GPU() : Oceananigans.CPU()
 
-x = (0, 1); z = (0, 1)
+x = (0, LX); z = (0, LZ)
 topology = (Periodic, Flat, Bounded)
 grid = RectilinearGrid(arch, size=(Nx, Nz), halo=(7, 7); x, z, topology)
 
@@ -49,9 +57,9 @@ function velocity_spectral_shape(k)
     return k * sqrt(exp(-2 * k′^2))
 end
 
-function initial_xz_field(Nx, Nz)
-    kx = vcat(0:Nx÷2, -Nx÷2+1:-1) .* (2π)
-    kz = vcat(0:Nz÷2, -Nz÷2+1:-1) .* (2π)
+function initial_xz_field(Nx, Nz; Lx=1.0, Lz=1.0)
+    kx = vcat(0:Nx÷2, -Nx÷2+1:-1) .* (2π / Lx)
+    kz = vcat(0:Nz÷2, -Nz÷2+1:-1) .* (2π / Lz)
     KX = repeat(reshape(kx, Nx, 1), 1, Nz)
     KZ = repeat(reshape(kz, 1, Nz), Nx, 1)
     K  = sqrt.(KX.^2 .+ KZ.^2)
@@ -62,9 +70,9 @@ end
 
 import Random
 Random.seed!(20260501)
-u0_xz = initial_xz_field(Nx, Nz)
-v0_xz = initial_xz_field(Nx, Nz)
-w0_xz = initial_xz_field(Nx, Nz)
+u0_xz = initial_xz_field(Nx, Nz; Lx=LX, Lz=LZ)
+v0_xz = initial_xz_field(Nx, Nz; Lx=LX, Lz=LZ)
+w0_xz = initial_xz_field(Nx, Nz; Lx=LX, Lz=LZ)
 
 # Flat y → arrays are (Nx, Nz)
 u0 = u0_xz
@@ -74,10 +82,18 @@ w0 = zeros(Nx, Nz+1); w0[:, 2:Nz] .= w0_xz[:, 2:Nz]
 struct ShallowStokesShear; shear::Float64; end
 @inline (s::ShallowStokesShear)(z, t) = s.shear * z
 
-if KIND == "medium_surface_waves"
-    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.5)))
-elseif KIND == "isotropic"
+if KIND == "isotropic"
     kwargs = NamedTuple()
+elseif KIND == "very_weak_surface_waves"
+    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.1)))
+elseif KIND == "weak_surface_waves"
+    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.25)))
+elseif KIND == "medium_surface_waves"
+    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(0.5)))
+elseif KIND == "strong_surface_waves"
+    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(1.0)))
+elseif KIND == "very_strong_surface_waves"
+    kwargs = (; stokes_drift = UniformStokesDrift(∂z_uˢ=ShallowStokesShear(2.0)))
 else
     error("unknown KIND=$KIND")
 end
@@ -98,12 +114,13 @@ parent(u) .-= mean(u); parent(v) .-= mean(v); parent(w) .-= mean(w)
 parent(u) ./= ω0; parent(v) ./= ω0; parent(w) ./= ω0
 
 max_u = maximum(abs, model.velocities.u)
-Δx = 1 / Nx
+Δx = LX / Nx
 Δt = 1e-3 * Δx / max_u
 simulation = Simulation(model; Δt, stop_time=STOP_TIME)
 conjure_time_step_wizard!(simulation, IterationInterval(3); cfl)
 
-prefix = "decaying_turbulence_xz25_$(Nx)_$(KIND)"
+prefix = LX == 1.0 ? "decaying_turbulence_xz25_$(Nx)_$(KIND)" :
+                     "decaying_turbulence_xz25_$(Nx)_L$(Int(LX))_$(KIND)"
 
 η = ∂x(w) - ∂z(u)
 e  = KernelFunctionOperation{Center, Center, Center}(tke25, grid, u, v, w)

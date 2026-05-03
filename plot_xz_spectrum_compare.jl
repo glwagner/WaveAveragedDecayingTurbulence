@@ -27,6 +27,7 @@ function spectrum_from_3d_field(prefix, time_target; α=0.25)
             ut = FieldTimeSeries(fields_file, "u")
             vt = FieldTimeSeries(fields_file, "v")
             wt = FieldTimeSeries(fields_file, "w")
+            Lx = ut.grid.Lx; Lz = ut.grid.Lz
             t  = ut.times
             n  = argmin(abs.(t .- time_target))
             if abs(t[n] - time_target) < 1.0
@@ -43,13 +44,13 @@ function spectrum_from_3d_field(prefix, time_target; α=0.25)
                 E_avg = nothing
                 kx = kz = nothing
                 for j = 1:Ny_min
-                    kx, kz, Eu = xz_spectrum(@view u[:, j, :]; α)
-                    _,  _,  Ev = xz_spectrum(@view v[:, j, :]; α)
-                    _,  _,  Ew = xz_spectrum(@view w[:, j, :]; α)
+                    kx, kz, Eu = xz_spectrum(@view u[:, j, :]; α, Lx, Lz)
+                    _,  _,  Ev = xz_spectrum(@view v[:, j, :]; α, Lx, Lz)
+                    _,  _,  Ew = xz_spectrum(@view w[:, j, :]; α, Lx, Lz)
                     E = Eu .+ Ev .+ Ew
                     E_avg = isnothing(E_avg) ? E : E_avg .+ E
                 end
-                return kx, kz, E_avg ./ Ny_min, t[n], "3D (Ny=$Ny_min y-slices avg)"
+                return kx, kz, E_avg ./ Ny_min, t[n], "3D (Ny=$Ny_min y-slices avg, Lx=$Lx)"
             end
         catch e
             @warn "Couldn't load 3D fields, falling back to xz slice: $e"
@@ -59,14 +60,17 @@ function spectrum_from_3d_field(prefix, time_target; α=0.25)
     u_xz, tact = load_xz_slice(prefix, "u", time_target)
     v_xz, _    = load_xz_slice(prefix, "v", time_target)
     w_xz, _    = load_xz_slice(prefix, "w", time_target)
+    # Read box size from xz file
+    fts = FieldTimeSeries(prefix * "_xz.jld2", "u")
+    Lx = fts.grid.Lx; Lz = fts.grid.Lz
     Nx_min = minimum(size(u, 1) for u in (u_xz, v_xz, w_xz))
     Nz_min = minimum(size(u, 2) for u in (u_xz, v_xz, w_xz))
     u_xz = u_xz[1:Nx_min, 1:Nz_min]
     v_xz = v_xz[1:Nx_min, 1:Nz_min]
     w_xz = w_xz[1:Nx_min, 1:Nz_min]
-    kx, kz, Eu = xz_spectrum(u_xz; α)
-    _,  _,  Ev = xz_spectrum(v_xz; α)
-    _,  _,  Ew = xz_spectrum(w_xz; α)
+    kx, kz, Eu = xz_spectrum(u_xz; α, Lx, Lz)
+    _,  _,  Ev = xz_spectrum(v_xz; α, Lx, Lz)
+    _,  _,  Ew = xz_spectrum(w_xz; α, Lx, Lz)
     return kx, kz, Eu .+ Ev .+ Ew, tact, "xz slice (y=1)"
 end
 

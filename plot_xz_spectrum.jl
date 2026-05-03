@@ -44,7 +44,7 @@ the x-z plane. x is periodic; z is bounded — a window in z is required to avoi
 ringing. Returns (kx_pos, kz_pos, E2D) where E2D[i, j] is energy density at (kx_pos[i],
 kz_pos[j]) summed over conjugate pairs (so it integrates to total energy).
 """
-function xz_spectrum(u; window=:tukey, α=0.25, detrend_z=false)
+function xz_spectrum(u; window=:tukey, α=0.25, detrend_z=false, Lx=1.0, Lz=1.0)
     Nx, Nz = size(u)
 
     # CAVEAT: do NOT subtract horizontal-mean U(z) — that's exactly the depth-alternating
@@ -60,10 +60,10 @@ function xz_spectrum(u; window=:tukey, α=0.25, detrend_z=false)
     û = fft(u_work) ./ (Nx * Nz)
     e = abs.(û).^2 ./ 2
 
-    # Shift so kx, kz ∈ [-N/2, N/2-1] order
+    # Shift so kx, kz ∈ [-N/2, N/2-1] order. Wavenumber spacing = 2π/L (depends on box).
     e_shift = fftshift(e)
-    kx = (-Nx÷2 : Nx÷2-1) .* (2π)
-    kz = (-Nz÷2 : Nz÷2-1) .* (2π)
+    kx = (-Nx÷2 : Nx÷2-1) .* (2π / Lx)
+    kz = (-Nz÷2 : Nz÷2-1) .* (2π / Lz)
 
     return kx, kz, e_shift
 end
