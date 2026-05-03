@@ -52,7 +52,7 @@ end
 
 function plot_single(prefix, time_target;
                      outname=@sprintf("%s_field_and_spectrum_t%05d.png", prefix, round(Int, time_target)),
-                     Klim_aniso=10, log_decades=1.5, ηpercentile=0.99)
+                     Klim_aniso=10, log_decades=4, ηpercentile=0.99)
 
     η, t = eta_xz_at(prefix, time_target)
     Nx, Nz = size(η)
@@ -79,7 +79,7 @@ function plot_single(prefix, time_target;
     ax_s = Axis(fig[2, 1]; aspect=1, title="log₁₀ E(kx, kz)",
                 xlabel="kx / 2π", ylabel="kz / 2π")
     hm_s = heatmap!(ax_s, kx ./ (2π), kz ./ (2π), log10.(max.(E, 1e-30));
-                    colormap=:viridis, colorrange=(vmin, vmax))
+                    colormap=:viridis, colorrange=(vmin, vmax), interpolate=true)
     xlims!(ax_s, -Klim_aniso, Klim_aniso); ylims!(ax_s, -Klim_aniso, Klim_aniso)
 
     # kᵦ peanut overlay
