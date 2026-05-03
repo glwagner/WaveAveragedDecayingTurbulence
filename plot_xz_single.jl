@@ -50,9 +50,48 @@ function eta_xz_at(prefix, t_target)
     return load_xz_slice(prefix, "η", t_target)
 end
 
+"""
+    perturbation_spectrum(prefix, time_target)
+
+Like `spectrum_from_3d_field` but computes the kinetic energy of the perturbation
+away from the zonal (x-) mean: e' = (u'² + v²)/2 with u' = u − ⟨u⟩_x(z). v is
+already zero-mean in x by symmetry. w is omitted on the assumption the user is
+interested in the "horizontal" KE (matching the β-plane convention).
+
+This zeros the kx=0 column — where the depth-alternating jets live — so the
+spectrum reveals the wave-modified turbulence sitting underneath them.
+"""
+function perturbation_spectrum(prefix, time_target; α=0.25)
+    fields_file = prefix * "_fields.jld2"
+    ut = FieldTimeSeries(fields_file, "u")
+    vt = FieldTimeSeries(fields_file, "v")
+    Lx = ut.grid.Lx; Lz = ut.grid.Lz
+    t  = ut.times
+    n  = argmin(abs.(t .- time_target))
+    u3 = Array(interior(ut[n])); v3 = Array(interior(vt[n]))
+    Nx_min = min(size(u3, 1), size(v3, 1))
+    Ny_min = min(size(u3, 2), size(v3, 2))
+    Nz_min = min(size(u3, 3), size(v3, 3))
+    u3 = u3[1:Nx_min, 1:Ny_min, 1:Nz_min]
+    v3 = v3[1:Nx_min, 1:Ny_min, 1:Nz_min]
+
+    # Subtract zonal (x-) mean from u
+    u3 .-= mean(u3, dims=1)
+
+    E_avg = nothing; kx = kz = nothing
+    for j = 1:Ny_min
+        kx, kz, Eu = xz_spectrum(@view u3[:, j, :]; α, Lx, Lz)
+        _,  _,  Ev = xz_spectrum(@view v3[:, j, :]; α, Lx, Lz)
+        E = Eu .+ Ev
+        E_avg = isnothing(E_avg) ? E : E_avg .+ E
+    end
+    return kx, kz, E_avg ./ Ny_min, t[n], "perturbation: u' = u−⟨u⟩_x, e=(u'²+v²)/2"
+end
+
 function plot_single(prefix, time_target;
                      outname=@sprintf("%s_field_and_spectrum_t%05d.png", prefix, round(Int, time_target)),
-                     Klim_aniso=10, log_decades=4, ηpercentile=0.99)
+                     Klim_aniso=10, log_decades=4, ηpercentile=0.99,
+                     perturbation=false)
 
     η, t = eta_xz_at(prefix, time_target)
     Nx, Nz = size(η)
@@ -60,7 +99,13 @@ function plot_single(prefix, time_target;
     ηlim = quantile(vec(abs.(η)), ηpercentile)
     @info "η colorrange = ±$(round(ηlim, sigdigits=3))"
 
-    kx, kz, E, _, source = spectrum_from_3d_field(prefix, time_target)
+    if perturbation
+        kx, kz, E, _, source = perturbation_spectrum(prefix, time_target)
+        spectrum_label = "log₁₀ E'(kx, kz)   (jets removed)"
+    else
+        kx, kz, E, _, source = spectrum_from_3d_field(prefix, time_target)
+        spectrum_label = "log₁₀ E(kx, kz)"
+    end
     @info "spectrum source: $source"
 
     vmax = log10(maximum(E)); vmin = vmax - log_decades
@@ -76,7 +121,7 @@ function plot_single(prefix, time_target;
     Colorbar(fig[1, 2], hm_r; label="η = ∂ₓw − ∂_z u")
 
     # 2D spectrum (zoomed to barbell scale)
-    ax_s = Axis(fig[2, 1]; aspect=1, title="log₁₀ E(kx, kz)",
+    ax_s = Axis(fig[2, 1]; aspect=1, title=spectrum_label,
                 xlabel="kx / 2π", ylabel="kz / 2π")
     hm_s = heatmap!(ax_s, kx ./ (2π), kz ./ (2π), log10.(max.(E, 1e-30));
                     colormap=:viridis, colorrange=(vmin, vmax), interpolate=true)
@@ -110,9 +155,13 @@ end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     if length(ARGS) < 1
-        error("usage: julia plot_xz_single.jl <prefix> [time]")
+        error("usage: julia plot_xz_single.jl <prefix> [time] [--perturbation]")
     end
     prefix = ARGS[1]
     tval   = length(ARGS) >= 2 ? parse(Float64, ARGS[2]) : 1000.0
-    plot_single(prefix, tval)
+    pert   = "--perturbation" in ARGS
+    out_suffix = pert ? "_perturbation" : ""
+    plot_single(prefix, tval; perturbation=pert,
+                outname=@sprintf("%s_field_and_spectrum_t%05d%s.png",
+                                 prefix, round(Int, tval), out_suffix))
 end
