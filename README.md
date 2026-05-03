@@ -18,6 +18,7 @@ The wave-averaged Navier–Stokes equations are integrated with [Oceananigans.jl
 - [Slurm batch scripts](#slurm-batch-scripts)
 - [Plot scripts: paper figures](#plot-scripts-paper-figures)
 - [Plot scripts: wave-arrest "barbell" diagnostic](#plot-scripts-wave-arrest-barbell-diagnostic)
+- [How to make plots and visualizations](#how-to-make-plots-and-visualizations)
 - [Animations](#animations)
 - [Glossary of variables and quantities](#glossary-of-variables-and-quantities)
 
@@ -243,10 +244,175 @@ julia --project=runs animate_xz_field_and_spectrum.jl \
 
 ### Tuning the spectrum visualization
 
-`plot_xz_single.jl` and `plot_xz_field_and_spectrum.jl` accept the following knobs at the top of the function:
-- `Klim_aniso` — half-range of the (kx, kz) plot in 2π units (default 8–10). Zoom further in to make low-k structure visible.
-- `log_decades` — dynamic range of the log color scale (default 1.5). Tight is better when the dumbbell hollow is only ~0.5–1 decade below the peak.
+`plot_xz_single.jl` and `plot_xz_field_and_spectrum.jl` accept the following knobs at the top of `plot_single(...)` / `plot_field_and_spectrum(...)`:
+- `Klim_aniso` — half-range of the (kx, kz) plot in 2π units (default 10). Zoom further in (smaller value) to make low-k structure visible; zoom out to see the cascade-to-dissipation range.
+- `log_decades` — dynamic range of the log color scale (default 4). Tighten (e.g. 1.5) when the dumbbell hollow is only ~0.5–1 decade below the peak; widen to surface low-energy turbulent surround.
 - `ηpercentile` — percentile-based color saturation for the real-space η panel (default 0.99), so a few extreme vortices don't blow out the colorscale.
+- `perturbation` (single-case only) — when `true`, subtracts the zonal-mean U(z) from u and plots the spectrum of the perturbation `e' = (u'² + v²)/2` instead of the full kinetic energy. Removes the kx=0 column where the jets live.
+
+---
+
+## How to make plots and visualizations
+
+This section walks through how to actually produce each kind of figure from a fresh `*.jld2` output. All commands assume you are in the project root and that `Pkg.instantiate()` has been run for the relevant environment.
+
+### File naming conventions
+
+Every simulation writes a set of JLD2 files sharing a common **prefix**:
+
+```
+<prefix>_fields.jld2       # Full 3D snapshots at a few times (t=100, 1000, 10000)
+<prefix>_xz.jld2           # xz cross-sections at ~200 logarithmically-spaced times
+<prefix>_yz.jld2           # yz cross-sections (only the 3D drivers)
+<prefix>_xy.jld2           # xy cross-sections (only the 3D drivers)
+<prefix>_statistics.jld2   # domain-averaged quantities (e, ω², Y², ...)
+<prefix>_averages.jld2     # horizontal-mean profiles U(z), V(z) at slice times
+```
+
+Examples of prefixes for runs we generate:
+
+| driver | example prefix |
+|---|---|
+| `decaying_turbulence_256.jl` | `decaying_turbulence_256_9_medium_surface_waves` |
+| `decaying_turbulence_384.jl` | `decaying_turbulence_384_9_medium_surface_waves` |
+| `runs/decaying_turbulence_xz25.jl` (L=1) | `decaying_turbulence_xz25_256_medium_surface_waves` |
+| `runs/decaying_turbulence_xz25.jl` (L≠1) | `decaying_turbulence_xz25_1024_L4_very_strong_surface_waves` |
+
+### Inspecting what's in a file
+
+To list the times saved in a slice/fields file and the field names:
+
+```julia
+julia --project=runs -e '
+using Oceananigans
+fts = FieldTimeSeries("decaying_turbulence_xz25_256_medium_surface_waves_xz.jld2", "u")
+println("times: ", length(fts.times), "   first = $(fts.times[1])   last = $(fts.times[end])")
+println("grid: ", fts.grid)
+'
+```
+
+### Recipe 1: real-space η + (kx, kz) spectrum, single case
+
+For one wave-modulated case at one time:
+
+```bash
+julia --project=runs plot_xz_single.jl \
+    decaying_turbulence_xz25_1024_L4_very_strong_surface_waves \
+    1000
+# → decaying_turbulence_xz25_1024_L4_very_strong_surface_waves_field_and_spectrum_t01000.png
+```
+
+The figure has two panels:
+- **Top**: `η(x, z) = ∂_x w − ∂_z u` on a balanced (red/blue) colormap, colorrange = ±99th percentile.
+- **Bottom**: `log₁₀ E(kx, kz)` summed over u, v, w, on viridis. Red dashed peanut marks `kᵦ(θ) = kᴿ √|cos θ|` — the wave-arrest envelope.
+
+To override the defaults, edit the `plot_single(prefix, time; Klim_aniso=…, log_decades=…)` call at the bottom of the script, or call the function from your own driver script.
+
+### Recipe 2: jets-removed perturbation spectrum
+
+`u' = u − ⟨u⟩_x(z)` strips out the zonal-mean depth-alternating jets. In spectral space this zeros the `kx=0` column. The remaining spectrum shows the wave-modified turbulent perturbation:
+
+```bash
+julia --project=runs plot_xz_single.jl \
+    decaying_turbulence_xz25_1024_L4_very_strong_surface_waves \
+    1000 --perturbation
+# → ..._field_and_spectrum_t01000_perturbation.png
+```
+
+### Recipe 3: side-by-side comparison (e.g. medium-waves vs isotropic)
+
+```bash
+julia --project=runs plot_xz_field_and_spectrum.jl \
+    decaying_turbulence_xz25_256_isotropic \
+    decaying_turbulence_xz25_256_medium_surface_waves \
+    1000
+```
+
+3-panel figure: real-space η (both cases on top), raw `log₁₀ E(kx, kz)` (both cases in middle), and `log₁₀(E_medium / E_isotropic)` on the bottom — that ratio panel is the cleanest visualization of the wave-induced anisotropy.
+
+### Recipe 4: 1D marginal spectra E(kx) and E(kz)
+
+```bash
+julia --project=runs plot_xz_spectrum_compare.jl 1000
+```
+
+Defaults to `decaying_turbulence_256_9_isotropic` and `decaying_turbulence_256_9_medium_surface_waves`. Produces a figure with the 2D `log₁₀ E(kx, kz)` heatmaps **and** the 1D marginal spectra `E(kx) = Σ_kz E` and `E(kz) = Σ_kx E` for both cases. The `E(kz)` panel makes the zonal-jet enhancement most quantitatively visible (medium-waves curve sits ~1–2 decades above isotropic at low kz).
+
+### Recipe 5: time animation
+
+```bash
+# Single-case
+julia --project=runs animate_xz_field_and_spectrum.jl \
+    decaying_turbulence_xz25_1024_L4_very_strong_surface_waves \
+    very_strong.mp4
+
+# Two-case 2x2 (η top, spectra bottom; isotropic | medium)
+julia --project=runs animate_xz_field_and_spectrum.jl \
+    decaying_turbulence_xz25_256_isotropic \
+    decaying_turbulence_xz25_256_medium_surface_waves \
+    iso_vs_medium.mp4
+```
+
+Frame rate defaults to 12 fps. Reads from `<prefix>_xz.jld2` (the 200-frame slice file) — works on any saved xz output without 3D field data. Uses CairoMakie + `record(...)` to write an mp4.
+
+The colormap range and η-saturation level are picked from the early-mid times (when the field is still active) and held fixed across all frames so late-time decay doesn't blow out the dynamic range.
+
+### Recipe 6: paper figures
+
+These are reproductions of the WC25 paper figures. Run after the corresponding 256³ or 384³ simulation has produced its outputs.
+
+```bash
+# Fig 1 — vorticity 3D cubes (rotating, wave-averaged, isotropic at t=1000)
+julia --project=. plot_decaying_turbulence_3d.jl
+
+# Fig 2(b,c) — xz η slice at t=1000
+julia --project=. plot_decaying_turbulence.jl
+
+# Fig 3 — v(x, y=0, z) at t=20 and t=400 across deep/medium/weak; U(z) profiles
+julia --project=. plot_wave_averaged_evolution.jl
+
+# Fig 4 — KE decay curves k(t)/k₀ for all six cases with the model fits
+julia --project=. plot_many_kinetic_energy_decay.jl
+```
+
+`GLMakie` is required for the 3D plots (`plot_decaying_turbulence_3d.jl`, `plot_decaying_turbulence_3d_vertical.jl`). On a headless cluster without OpenGL, edit those scripts to `using CairoMakie` if you only want the 2D-projected versions of the 3D scenes.
+
+### Recipe 7: 1D radial energy spectrum
+
+The spherically-averaged `E(|k|)` from a 3D field (used in WC25 §2.1 to verify the IC):
+
+```bash
+julia --project=. spectra.jl
+```
+
+Reads `<filename>_fields.jld2` (hardcoded near the top of the script — edit to point at your run).
+
+### What if the spectrum looks too coarse?
+
+The spectral grid spacing is `Δk = 2π / L`, *set by the box size, not by N*. With the canonical L=1 box and a wave-arrest scale `kᴿ/2π ≈ 2–4`, the dumbbell spans only a handful of modes, which can look pixelated.
+
+Two fixes (independent):
+
+1. **Re-render with `interpolate=true` and a wider color range** — `plot_xz_single.jl` already does both as defaults, smoothing the visualization without changing the data. Adjust `log_decades` (default 4) to taste.
+2. **Run a larger-box simulation.** Doubling L halves Δk and gives twice as many cells per kᵦ. Keep Δx the same by also doubling N:
+   ```bash
+   N=1024 LX=4 LZ=4 KIND=very_strong_surface_waves \
+     sbatch runs/xz25_long.batch
+   ```
+   The L=4 N=1024 case has Δk = π/2 — four times the spectral resolution of L=1 — and runs in ~25 minutes on a single H100.
+
+### What if the dumbbell isn't visible?
+
+The dumbbell forms during the inverse cascade as energy reaches `kᴿ` and gets diverted into zonal modes. It's most informative at intermediate times (`t ≈ 300–3000`); by `t = 10⁴` the energy has typically collapsed onto a couple of box-scale modes which is visually less rich. Plot a sweep:
+
+```bash
+prefix=decaying_turbulence_xz25_1024_L4_very_strong_surface_waves
+for t in 100 300 1000 3000 10000; do
+  julia --project=runs plot_xz_single.jl $prefix $t
+done
+```
+
+Stronger waves (`KIND=very_strong_surface_waves`, `∂z uˢ = 2.0`) push `kᴿ` further out and make the dumbbell span more modes. If you only see a single bright cell at `kx=0`, kz=±1, the cascade has fully arrested onto the largest mode — try an earlier time, or rerun with a stronger wave forcing.
 
 ---
 
